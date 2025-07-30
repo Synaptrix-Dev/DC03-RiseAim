@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Synaptrix Server - Live Status</title>
+    <link
+      rel="icon"
+      type="image/png"
+      href="https://admin.synaptrixsol.com/assets/logo-CR40MxWb.png"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-primary: #f3f4f6;
+        --card-bg: #f8fafc;
+        --border-color: #e2e8f0;
+        --text-primary: #1f2937;
+        --text-secondary: #4b5563;
+        --text-muted: #6b7280;
+        --accent-blue: #2563eb;
+        --accent-blue-hover: #1d4ed8;
+        --success-green: #10b981;
+        --heartbeat-color: #ef4444;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        background: linear-gradient(135deg, var(--bg-primary) 0%, #e5e7eb 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Outfit", sans-serif;
+        margin: 0;
+        padding: 1rem;
+        position: relative;
+        overflow-x: hidden;
+      }
+
+      /* Animated background */
+      body::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: radial-gradient(
+            circle at 25% 25%,
+            rgba(37, 99, 235, 0.05) 0%,
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 75% 75%,
+            rgba(16, 185, 129, 0.03) 0%,
+            transparent 50%
+          );
+        animation: float 20s ease-in-out infinite;
+        pointer-events: none;
+      }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0px) rotate(0deg);
+        }
+        33% {
+          transform: translateY(-10px) rotate(1deg);
+        }
+        66% {
+          transform: translateY(5px) rotate(-1deg);
+        }
+      }
+
+      .server-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        border-radius: 1.5rem;
+        padding: 3rem 2.5rem;
+        max-width: 36rem;
+        width: 100%;
+        text-align: center;
+        animation: slideUp 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        box-shadow: 0 20px 40px -5px rgba(0, 0, 0, 0.1),
+          0 8px 16px -4px rgba(0, 0, 0, 0.05);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .server-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--success-green),
+          transparent
+        );
+        animation: shimmer 3s infinite;
+      }
+
+      @keyframes shimmer {
+        0% {
+          left: -100%;
+        }
+        100% {
+          left: 100%;
+        }
+      }
+
+      @keyframes slideUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px) scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .logo-container {
+        margin-bottom: 2rem;
+        position: relative;
+        display: inline-block;
+      }
+
+      .logo {
+        width: 100px;
+        height: 80px;
+        border-radius: 1rem;
+        /* box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15); */
+        animation: logoPulse 2s ease-in-out infinite;
+        transition: all 0.3s ease;
+      }
+
+      @keyframes logoPulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.05);
+        }
+      }
+
+      .status-indicator {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        width: 24px;
+        height: 24px;
+        background: var(--success-green);
+        border-radius: 50%;
+        border: 3px solid white;
+        animation: statusPulse 1.5s ease-in-out infinite;
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+      }
+
+      @keyframes statusPulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.2);
+          opacity: 0.8;
+        }
+      }
+
+      .title-section {
+        margin-bottom: 2rem;
+      }
+
+      .server-title {
+        color: var(--text-primary);
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(
+          135deg,
+          var(--text-primary) 0%,
+          var(--accent-blue) 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .server-subtitle {
+        color: var(--text-secondary);
+        font-size: 1.125rem;
+        font-weight: 400;
+        margin-bottom: 1rem;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success-green);
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--success-green);
+        border-radius: 50%;
+        animation: statusDotPulse 1s ease-in-out infinite;
+      }
+
+      @keyframes statusDotPulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      /* Heartbeat Monitor */
+      .heartbeat-container {
+        background: rgba(255, 255, 255, 0.5);
+        border-radius: 1rem;
+        padding: 2rem;
+        margin: 2rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .heartbeat-title {
+        color: var(--text-secondary);
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+      }
+
+      .heartbeat-monitor {
+        width: 100%;
+        height: 80px;
+        position: relative;
+        background: #1f2937;
+        border-radius: 0.5rem;
+        overflow: hidden;
+      }
+
+      .heartbeat-line {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: rgba(16, 185, 129, 0.3);
+        transform: translateY(-50%);
+      }
+
+      .heartbeat-wave {
+        position: absolute;
+        top: 50%;
+        left: -100px;
+        width: 100px;
+        transform: translateY(-50%);
+        animation: heartbeatMove 3s linear infinite;
+      }
+
+      .heartbeat-path {
+        fill: none;
+        stroke: var(--success-green);
+        stroke-width: 3;
+        stroke-linecap: round;
+        filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.8));
+      }
+
+      @keyframes heartbeatMove {
+        0% {
+          left: -100px;
+        }
+        100% {
+          left: 100%;
+        }
+      }
+
+      /* Metrics Grid */
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 1rem;
+        margin: 2rem 0;
+      }
+
+      .metric-card {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 0.75rem;
+        padding: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        transition: all 0.3s ease;
+      }
+
+      .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+      }
+
+      .metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--success-green);
+        margin-bottom: 0.25rem;
+      }
+
+      .metric-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .description {
+        color: var(--text-secondary);
+        font-size: 1rem;
+        font-weight: 300;
+        line-height: 1.6;
+        margin-bottom: 2rem;
+      }
+
+      .cta-container {
+        margin-bottom: 2rem;
+      }
+
+      .cta-button {
+        background: linear-gradient(
+          135deg,
+          var(--accent-blue) 0%,
+          var(--accent-blue-hover) 100%
+        );
+        color: #ffffff;
+        padding: 1rem 2rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .cta-button::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 255, 255, 0.2),
+          transparent
+        );
+        transition: left 0.5s;
+      }
+
+      .cta-button:hover::before {
+        left: 100%;
+      }
+
+      .cta-button:hover {
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 8px 25px rgba(37, 99, 235, 0.4);
+      }
+
+      .contact-section {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .contact-info {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        font-weight: 400;
+        line-height: 1.6;
+      }
+
+      .contact-info p {
+        margin: 0.75rem 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+      }
+
+      .contact-info a {
+        color: var(--accent-blue);
+        text-decoration: none;
+        transition: all 0.3s ease;
+        position: relative;
+      }
+
+      .contact-info a::after {
+        content: "";
+        position: absolute;
+        width: 0;
+        height: 2px;
+        bottom: -2px;
+        left: 0;
+        background: var(--accent-blue);
+        transition: width 0.3s ease;
+      }
+
+      .contact-info a:hover::after {
+        width: 100%;
+      }
+
+      .contact-info a:hover {
+        color: var(--accent-blue-hover);
+        transform: translateY(-1px);
+      }
+
+      .footer {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        font-weight: 300;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(226, 232, 240, 0.5);
+      }
+
+      .pulse-ring {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 100px;
+        height: 100px;
+        border: 2px solid var(--success-green);
+        border-radius: 50%;
+        opacity: 0;
+        animation: pulseRing 2s ease-out infinite;
+      }
+
+      @keyframes pulseRing {
+        0% {
+          transform: translate(-50%, -50%) scale(0.5);
+          opacity: 1;
+        }
+        100% {
+          transform: translate(-50%, -50%) scale(1.5);
+          opacity: 0;
+        }
+      }
+
+      /* Responsive */
+      @media (max-width: 640px) {
+        .server-card {
+          padding: 2rem 1.5rem;
+          margin: 1rem;
+        }
+
+        .server-title {
+          font-size: 2rem;
+        }
+
+        .logo {
+          width: 60px;
+          height: 60px;
+        }
+
+        .metrics-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="server-card">
+      <!-- Logo with Status Indicator -->
+      <div class="logo-container">
+        <img
+          src="https://admin.synaptrixsol.com/assets/logo-CR40MxWb.png"
+          alt="Synaptrix Logo"
+          class="logo"
+        />
+      </div>
+
+      <!-- Title Section -->
+      <div class="title-section">
+        <h1 class="server-title">KMap Server</h1>
+        <p class="server-subtitle">Powered by Synaptrix Solution</p>
+        <div class=""">
+          <span>Server Online</span>
+        </div>
+      </div>
+
+      <!-- Heartbeat Monitor -->
+      <!-- <div class="heartbeat-container">
+        <div class="heartbeat-monitor">
+          <div class="heartbeat-line"></div>
+          <div class="heartbeat-wave">
+            <svg width="100" height="80" viewBox="0 0 100 80">
+              <path
+                class="heartbeat-path"
+                d="M0,40 L20,40 L25,10 L30,70 L35,20 L40,60 L45,40 L100,40"
+              />
+            </svg>
+          </div>
+        </div>
+      </div> -->
+
+      <!-- Description -->
+      <p class="description">
+        Experience reliable and scalable solutions with our high-performance
+        KMap Server. Monitor real-time server health and enjoy seamless
+        connectivity with enterprise-grade performance.
+      </p>
+
+      <!-- CTA Button -->
+      <div class="cta-container">
+        <a href="https://www.synaptrixsol.com/" class="cta-button">
+          <span>Explore Services</span>
+          <span>🚀</span>
+        </a>
+      </div>
+
+      <!-- Contact Information -->
+      <div class="contact-section">
+        <div class="contact-info">
+          <p>
+            <span>✉️</span>
+            <strong>Email:</strong>
+            <a href="mailto:info@synaptrixsol.com">info@synaptrixsol.com</a>
+          </p>
+          <p>
+            <span>📞</span>
+            <strong>Phone:</strong>
+            <a href="tel:+923432629297">+92 3432629297</a>
+          </p>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        © 2025 Synaptrix Technologies. All rights reserved.
+      </div>
+    </div>
+
+    <script>
+      // Animate metrics with realistic values
+      function animateMetrics() {
+        const uptime = document.getElementById("uptime");
+        const response = document.getElementById("response");
+        const requests = document.getElementById("requests");
+
+        // Simulate real-time updates
+        setInterval(() => {
+          // Response time variation (20-30ms)
+          const responseTime = Math.floor(Math.random() * 10) + 20;
+          response.textContent = responseTime + "ms";
+
+          // Request count increment
+          const currentRequests =
+            parseInt(requests.textContent.replace("K", "")) * 1000;
+          const newRequests =
+            currentRequests + Math.floor(Math.random() * 5) + 1;
+          requests.textContent = (newRequests / 1000).toFixed(1) + "K";
+        }, 5000);
+      }
+
+      // Initialize animations
+      document.addEventListener("DOMContentLoaded", () => {
+        animateMetrics();
+      });
+    </script>
+  </body>
+</html>

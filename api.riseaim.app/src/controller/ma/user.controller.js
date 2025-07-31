@@ -1,35 +1,258 @@
 import User from "../../models/user.model.js";
 import jwt from "jsonwebtoken";
-import asyncHandler from "../../services/asyncHandler.js";
+import asyncHandler from "../../services/asyncHandler.service.js";
 import sendResponse from "../../services/sendResponse.service.js";
 
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
 const authController = {
-  register: asyncHandler(async (req, res) => {
-    const { password, email, fullName } = req.body;
+  register: asyncHandler(async (req, res, next) => {
+    const { fullName, email, phone, password } = req.body;
+
+    if (!fullName || !email || !phone || !password) {
+      return sendResponse(res, 400, false, "All fields are required");
+    }
 
     let user = await User.findOne({ email });
     if (user) {
       return sendResponse(res, 400, false, "User with this email already exists");
     }
 
-    user = new User({ password, email, fullName });
+    user = await User.findOne({ phone });
+    if (user) {
+      return sendResponse(res, 400, false, "User with this phone number already exists");
+    }
+
+    const otp = generateOTP();
+
+    user = new User({
+      fullName,
+      email,
+      phone,
+      password,
+      status: "in-active",
+      otp: otp,
+    });
+
     await user.save();
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        isActive: user.status === "active",
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" }
+    );
+
+    sendResponse(res, 201, true, "User registered, OTP sent for verification", {
+      email,
+      token,
+      otp,
+    });
+  }),
+
+  verifyOTP: asyncHandler(async (req, res, next) => {
+    const { otp, phone } = req.body;
+
+    if (!otp || !phone) {
+      return sendResponse(res, 400, false, "OTP and phone are required");
+    }
+
+    const user = await User.findOne({ phone: phone });
+    if (!user) {
+      return sendResponse(res, 404, false, "User not found");
+    }
+
+    if (user.status !== "in-active") {
+      return sendResponse(res, 400, false, "Account already verified or invalid status");
+    }
+
+    if (user.otp !== otp) {
+      return sendResponse(res, 400, false, "Invalid OTP");
+    }
+
+    user.status = "active";
+    user.otp = undefined; // remove OTP after successful verification
+    await user.save();
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone,
+        isActive: true,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" }
+    );
+
+    return sendResponse(res, 200, true, "OTP verified, account activated", {
+      email: user.email,
+      phone: user.phone,
+      token,
+    });
+  }),
+
+  login: asyncHandler(async (req, res, next) => {
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+      return sendResponse(res, 400, false, "phone and password are required");
+    }
+
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return sendResponse(res, 400, false, "No user found with this phone");
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return sendResponse(res, 400, false, "Invalid credentials");
+    }
+
+    if (user.status !== "active") {
+      return sendResponse(res, 403, false, "Account is not active");
+    }
 
     const token = jwt.sign(
       {
         id: user._id,
         fullName: user.fullName,
         email: user.email,
-        isActive: user.isActive,
+        phone: user.phone,
+        isActive: user.status === "active",
       },
       process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
 
-    sendResponse(res, 201, true, "User registered successfully", {
-      email,
+    sendResponse(res, 200, true, "Login successful", {
+      email: user.email,
+      fullName: user.fullName,
+      phone: user.phone,
       token,
     });
+  }),
+
+  forgotPassword: asyncHandler(async (req, res, next) => {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return sendResponse(res, 400, false, "phone is required");
+    }
+
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return sendResponse(res, 404, false, "No user found with this phone");
+    }
+
+    const otp = generateOTP();
+
+    const resetToken = jwt.sign(
+      { id: user._id, email: user.email, phone: user.phone },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    sendResponse(res, 200, true, "Password reset OTP sent", {
+      resetToken,
+      otp, // For testing only
+    });
+  }),
+
+  resetPassword: asyncHandler(async (req, res, next) => {
+    const { resetToken, otp, newPassword } = req.body;
+
+    if (!resetToken || !otp || !newPassword) {
+      return sendResponse(res, 400, false, "Reset token, OTP, and new password are required");
+    }
+
+    try {
+      const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+      const user = await User.findById(decoded.id);
+
+      if (!user) {
+        return sendResponse(res, 404, false, "User not found");
+      }
+
+      // In production, verify OTP against DB or cache
+
+      user.password = newPassword;
+      await user.save();
+
+      sendResponse(res, 200, true, "Password reset successfully");
+    } catch (error) {
+      return sendResponse(res, 401, false, "Invalid or expired reset token");
+    }
+  }),
+
+  getUserDetails: asyncHandler(async (req, res, next) => {
+    const userId = req.user.id;
+
+    if (!userId) {
+      return sendResponse(res, 400, false, "User ID is required");
+    }
+
+    const user = await User.findById(userId).select("-password").lean();
+    if (!user) {
+      return sendResponse(res, 404, false, "User not found");
+    }
+
+    sendResponse(res, 200, true, "User details retrieved", user);
+  }),
+
+  updateUser: asyncHandler(async (req, res, next) => {
+    const userId = req.user.id;
+    const { fullName } = req.body;
+
+    if (!userId) {
+      return sendResponse(res, 400, false, "User ID is required");
+    }
+
+    const updateData = {};
+    if (fullName) updateData.fullName = fullName;
+
+    if (Object.keys(updateData).length === 0) {
+      return sendResponse(res, 400, false, "No data provided for update");
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      updateData,
+      { new: true, runValidators: true }
+    ).select("-password");
+
+    if (!updatedUser) {
+      return sendResponse(res, 404, false, "User not found");
+    }
+
+    sendResponse(res, 200, true, "User updated successfully", updatedUser);
+  }),
+
+  deactivateAccount: asyncHandler(async (req, res, next) => {
+    const userId = req.user.id;
+
+    if (!userId) {
+      return sendResponse(res, 400, false, "User ID is required");
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { status: "in-active" },
+      { new: true, runValidators: true }
+    );
+
+    if (!user) {
+      return sendResponse(res, 404, false, "User not found");
+    }
+
+    sendResponse(res, 200, true, "Account deactivated successfully");
   }),
 };
 

@@ -3,7 +3,7 @@ import cors from "cors";
 import path, { dirname } from "path";
 import { fileURLToPath } from "url";
 import connectToDB from "./src/database/connection.js";
-import asyncHandler from "./src/services/asyncHandler.js";
+import asyncHandler from "./src/services/asyncHandler.service.js";
 
 import mobileAppRoutes from "./src/router/ma/index.js";
 

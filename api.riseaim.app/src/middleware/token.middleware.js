@@ -4,9 +4,9 @@ import jwt from "jsonwebtoken";
 const publicRoutes = [
   "/register",
   "/login",
-  "/get-subscription-plans",
-  "/get-user-ads",
-  "/get-user-ad-details",
+  "/verify-otp",
+  "/forgot-password",
+  "/reset-password",
 ];
 
 const verifyToken = (req, res, next) => {

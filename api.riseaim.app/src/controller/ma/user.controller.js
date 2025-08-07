@@ -15,9 +15,9 @@ const authController = {
       return sendResponse(res, 400, false, "All fields are required");
     }
 
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ phone });
     if (user) {
-      return sendResponse(res, 400, false, "User with this email already exists");
+      return sendResponse(res, 400, false, "User with this phone already exists");
     }
 
     user = await User.findOne({ phone });

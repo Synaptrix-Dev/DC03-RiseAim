@@ -35,11 +35,6 @@ const authController = {
     }
 
     let user = await User.findOne({ phone });
-    if (user) {
-      return sendResponse(res, 400, false, "User with this phone number already exists");
-    }
-
-    const otp = generateOTP();
 
     user = new User({
       fullName,
@@ -47,7 +42,6 @@ const authController = {
       phone,
       password,
       status: "in-active",
-      otp: otp,
     });
 
     await user.save();
@@ -69,7 +63,6 @@ const authController = {
       otp,
     });
   }),
-
 
   verifyOTP: asyncHandler(async (req, res, next) => {
     const { otp, phone } = req.body;
@@ -208,7 +201,6 @@ const authController = {
       return sendResponse(res, 401, false, "Invalid or expired reset token");
     }
   }),
-
 
   getUserDetails: asyncHandler(async (req, res, next) => {
     const userId = req.user.id;

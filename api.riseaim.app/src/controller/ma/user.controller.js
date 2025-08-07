@@ -24,18 +24,17 @@ const authController = {
   }),
 
   register: asyncHandler(async (req, res, next) => {
-    const { fullName, email, phone, password } = req.body;
+    const { fullName, email, phone, password, isOTPVerified } = req.body;
 
     if (!fullName || !email || !phone || !password) {
       return sendResponse(res, 400, false, "All fields are required");
     }
 
-    let user = await User.findOne({ phone });
-    if (user) {
-      return sendResponse(res, 400, false, "User with this phone already exists");
+    if (!isOTPVerified) {
+      return sendResponse(res, 403, false, "OTP verification is required");
     }
 
-    user = await User.findOne({ phone });
+    let user = await User.findOne({ phone });
     if (user) {
       return sendResponse(res, 400, false, "User with this phone number already exists");
     }
@@ -70,6 +69,7 @@ const authController = {
       otp,
     });
   }),
+
 
   verifyOTP: asyncHandler(async (req, res, next) => {
     const { otp, phone } = req.body;
@@ -182,10 +182,14 @@ const authController = {
   }),
 
   resetPassword: asyncHandler(async (req, res, next) => {
-    const { resetToken, otp, newPassword } = req.body;
+    const { resetToken, newPassword, isOTPVerified } = req.body;
 
-    if (!resetToken || !otp || !newPassword) {
+    if (!resetToken || !newPassword) {
       return sendResponse(res, 400, false, "Reset token, OTP, and new password are required");
+    }
+
+    if (!isOTPVerified) {
+      return sendResponse(res, 403, false, "OTP verification is required");
     }
 
     try {
@@ -196,8 +200,6 @@ const authController = {
         return sendResponse(res, 404, false, "User not found");
       }
 
-      // In production, verify OTP against DB or cache
-
       user.password = newPassword;
       await user.save();
 
@@ -206,6 +208,7 @@ const authController = {
       return sendResponse(res, 401, false, "Invalid or expired reset token");
     }
   }),
+
 
   getUserDetails: asyncHandler(async (req, res, next) => {
     const userId = req.user.id;

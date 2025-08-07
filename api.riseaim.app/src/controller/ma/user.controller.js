@@ -8,6 +8,21 @@ const generateOTP = () => {
 };
 
 const authController = {
+  checkUser: asyncHandler(async (req, res, next) => {
+    const { email, phone } = req.body;
+
+    if (!email || !phone) {
+      return sendResponse(res, 400, false, "All fields are required");
+    }
+
+    let user = await User.findOne({ phone });
+    if (user) {
+      return sendResponse(res, 400, false, "User already exist in database");
+    }
+
+    sendResponse(res, 201, true, "User Does not exist, redirecting to OTP",);
+  }),
+
   register: asyncHandler(async (req, res, next) => {
     const { fullName, email, phone, password } = req.body;
 

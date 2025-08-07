@@ -7,6 +7,7 @@ const publicRoutes = [
   "/verify-otp",
   "/forgot-password",
   "/reset-password",
+  "/check-user",
 ];
 
 const verifyToken = (req, res, next) => {

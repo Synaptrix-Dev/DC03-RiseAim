@@ -60,7 +60,6 @@ const authController = {
     sendResponse(res, 201, true, "User registered, OTP sent for verification", {
       email,
       token,
-      otp,
     });
   }),
 

@@ -202,7 +202,7 @@ const authController = {
       return sendResponse(res, 404, false, "No user found with this phone");
     }
 
-    const otp = generateOTP();
+    // const otp = generateOTP();
 
     const resetToken = jwt.sign(
       { id: user._id, email: user.email, phone: user.phone },
@@ -212,7 +212,6 @@ const authController = {
 
     sendResponse(res, 200, true, "Password reset OTP sent", {
       resetToken,
-      otp, // For testing only
     });
   }),
 

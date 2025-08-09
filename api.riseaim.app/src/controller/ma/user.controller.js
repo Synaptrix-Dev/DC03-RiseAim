@@ -231,7 +231,6 @@ const authController = {
     return sendResponse(res, 200, true, "Password reset successfully");
   }),
 
-
   getUserDetails: asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
 

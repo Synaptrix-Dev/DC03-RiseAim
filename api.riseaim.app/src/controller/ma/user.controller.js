@@ -41,7 +41,7 @@ const authController = {
       email,
       phone,
       password,
-      status: "in-active",
+      status: "active",
     });
 
     await user.save();
@@ -51,7 +51,7 @@ const authController = {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
-        isActive: user.status === "active",
+        isActive: user.status,
       },
       process.env.JWT_SECRET,
       { expiresIn: "24h" }
@@ -106,48 +106,6 @@ const authController = {
     });
   }),
 
-  // login: asyncHandler(async (req, res, next) => {
-  //   const { phone, password } = req.body;
-
-  //   if (!phone || !password) {
-  //     return sendResponse(res, 400, false, "phone and password are required");
-  //   }
-
-  //   const user = await User.findOne({ phone });
-  //   if (!user) {
-  //     return sendResponse(res, 400, false, "No user found with this phone");
-  //   }
-
-  //   const isMatch = await user.comparePassword(password);
-  //   if (!isMatch) {
-  //     return sendResponse(res, 400, false, "Invalid credentials");
-  //   }
-
-  //   if (user.status !== "active") {
-  //     return sendResponse(res, 403, false, "Account is not active");
-  //   }
-
-  //   const token = jwt.sign(
-  //     {
-  //       id: user._id,
-  //       fullName: user.fullName,
-  //       email: user.email,
-  //       phone: user.phone,
-  //       isActive: user.status === "active",
-  //     },
-  //     process.env.JWT_SECRET,
-  //     { expiresIn: "24h" }
-  //   );
-
-  //   sendResponse(res, 200, true, "Login successful", {
-  //     email: user.email,
-  //     fullName: user.fullName,
-  //     phone: user.phone,
-  //     token,
-  //   });
-  // }),
-
-  // LOGIN - already contains phone, just leaving as is
   login: asyncHandler(async (req, res, next) => {
     const { phone, password } = req.body;
 
@@ -165,9 +123,9 @@ const authController = {
       return sendResponse(res, 400, false, "Invalid credentials");
     }
 
-    if (user.status !== "active") {
-      return sendResponse(res, 403, false, "Account is not active");
-    }
+    // if (user.status !== "active") {
+    //   return sendResponse(res, 403, false, "Account is not active");
+    // }
 
     const token = jwt.sign(
       {
@@ -188,7 +146,6 @@ const authController = {
       token,
     });
   }),
-
 
   forgotPassword: asyncHandler(async (req, res, next) => {
     const { phone } = req.body;
@@ -258,34 +215,6 @@ const authController = {
     sendResponse(res, 200, true, "User details retrieved", user);
   }),
 
-  // updateUser: asyncHandler(async (req, res, next) => {
-  //   const userId = req.user.id;
-  //   const { fullName } = req.body;
-
-  //   if (!userId) {
-  //     return sendResponse(res, 400, false, "User ID is required");
-  //   }
-
-  //   const updateData = {};
-  //   if (fullName) updateData.fullName = fullName;
-
-  //   if (Object.keys(updateData).length === 0) {
-  //     return sendResponse(res, 400, false, "No data provided for update");
-  //   }
-
-  //   const updatedUser = await User.findByIdAndUpdate(
-  //     userId,
-  //     updateData,
-  //     { new: true, runValidators: true }
-  //   ).select("-password");
-
-  //   if (!updatedUser) {
-  //     return sendResponse(res, 404, false, "User not found");
-  //   }
-
-  //   sendResponse(res, 200, true, "User updated successfully", updatedUser);
-  // }),
-
   updateUser: asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
     const { fullName } = req.body;
@@ -329,7 +258,6 @@ const authController = {
       token: updatedToken
     });
   }),
-
 
   deactivateAccount: asyncHandler(async (req, res, next) => {
     const userId = req.user.id;

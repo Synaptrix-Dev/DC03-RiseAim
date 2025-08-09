@@ -200,6 +200,38 @@ const authController = {
     }
   }),
 
+  resetOrForgotPassword: asyncHandler(async (req, res, next) => {
+    const { phone, newPassword, isOTPVerified } = req.body;
+
+    if (!phone) {
+      return sendResponse(res, 400, false, "Phone is required");
+    }
+
+    // Find user by phone
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return sendResponse(res, 404, false, "No user found with this phone");
+    }
+
+    // If OTP not verified → send OTP response (no password change)
+    if (!isOTPVerified) {
+      // const otp = generateOTP();  // Generate OTP if you have that function
+      // TODO: Send OTP via SMS/email here
+      return sendResponse(res, 200, true, "Password reset OTP sent");
+    }
+
+    // OTP is verified → reset password
+    if (!newPassword) {
+      return sendResponse(res, 400, false, "New password is required");
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    return sendResponse(res, 200, true, "Password reset successfully");
+  }),
+
+
   getUserDetails: asyncHandler(async (req, res, next) => {
     const userId = req.user.id;
 

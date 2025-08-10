@@ -245,16 +245,16 @@ const authController = {
       return sendResponse(res, 404, false, "User not found");
     }
 
-    // Fetch rental application with status active OR verified
-    const rentalApplication = await Rental.findOne({
+    // Check if rental application exists with status active OR verified
+    const rentalExists = await Rental.exists({
       user: userId,
       status: { $in: ["active", "verified"] }
-    }).lean();
+    });
 
-    // Merge data
+    // Merge data and return only boolean
     const userDetails = {
       ...user,
-      rentalApplication: rentalApplication || null
+      isRentalApplication: !!rentalExists
     };
 
     sendResponse(res, 200, true, "User details retrieved", userDetails);

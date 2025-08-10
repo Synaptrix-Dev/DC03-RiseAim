@@ -1,8 +1,137 @@
 import Rental from "../../models/rental.model.js";
+import User from '../../models/user.model.js'
 import asyncHandler from "../../services/asyncHandler.service.js";
 import sendResponse from "../../services/sendResponse.service.js";
 
 const rentalController = {
+  // createRental: asyncHandler(async (req, res, next) => {
+  //   const user = req.user.id;
+  //   const {
+  //     annualRentAmount,
+  //     alreadyPaidAmount = 0,
+  //     attachment,
+  //     city,
+  //     neighborhood,
+  //     propertyOwners,
+  //   } = req.body;
+
+  //   // Validate required fields
+  //   if (
+  //     !user ||
+  //     annualRentAmount === undefined ||
+  //     !city ||
+  //     !neighborhood ||
+  //     !propertyOwners?.fullName ||
+  //     !propertyOwners?.phone
+  //   ) {
+  //     return sendResponse(res, 400, false, "Required fields are missing");
+  //   }
+
+  //   // Check if there is any existing rental that is NOT closed
+  //   const existingRental = await Rental.findOne({
+  //     user,
+  //     status: { $ne: "closed" }
+  //   });
+
+  //   if (existingRental) {
+  //     return sendResponse(
+  //       res,
+  //       400,
+  //       false,
+  //       "You can only create a new rental when all previous applications are closed"
+  //     );
+  //   }
+
+  //   // Convert inputs to numbers
+  //   const annualAmountNum = Number(annualRentAmount);
+  //   const alreadyPaidNum = Number(alreadyPaidAmount);
+
+  //   // Validate numbers
+  //   if (isNaN(annualAmountNum) || annualAmountNum <= 0) {
+  //     return sendResponse(res, 400, false, "Invalid annualRentAmount");
+  //   }
+  //   if (isNaN(alreadyPaidNum) || alreadyPaidNum < 0) {
+  //     return sendResponse(res, 400, false, "Invalid alreadyPaidAmount");
+  //   }
+
+  //   // Calculate remaining principal after already paid amount
+  //   const remainingPrincipal = annualAmountNum - alreadyPaidNum;
+  //   if (remainingPrincipal < 0) {
+  //     return sendResponse(
+  //       res,
+  //       400,
+  //       false,
+  //       "Already paid amount cannot exceed annual rent"
+  //     );
+  //   }
+
+  //   // Calculate interest (20%) on remaining amount
+  //   const interest = Number((remainingPrincipal * 0.2).toFixed(2));
+  //   const totalDueWithInterest = Number(
+  //     (remainingPrincipal + interest).toFixed(2)
+  //   );
+  //   const monthlyInstallment = Number(
+  //     (totalDueWithInterest / 12).toFixed(2)
+  //   );
+
+  //   // Build monthly payment schedule with full date
+  //   const monthlySchedule = [];
+  //   let currentDate = new Date();
+  //   const startDay = currentDate.getDate(); // Keep same day across months
+  //   let amountRemaining = totalDueWithInterest;
+
+  //   for (let i = 0; i < 12; i++) {
+  //     currentDate.setDate(startDay);
+  //     const day = String(currentDate.getDate()).padStart(2, "0");
+  //     const monthName = currentDate.toLocaleString("default", { month: "long" });
+  //     const year = currentDate.getFullYear();
+
+  //     let status = "un-paid";
+
+  //     // If already paid covers at least the first month, mark it paid
+  //     if (i === 0 && alreadyPaidNum > 0) {
+  //       status = "paid";
+  //       amountRemaining -= monthlyInstallment;
+  //     }
+
+  //     monthlySchedule.push({
+  //       month: `${day} ${monthName} ${year}`, // Example: "11 August 2025"
+  //       amount: monthlyInstallment,
+  //       status,
+  //     });
+
+  //     currentDate.setMonth(currentDate.getMonth() + 1);
+  //   }
+
+  //   // Calculate total due amount after marking first month as paid
+  //   const dueAmount = monthlySchedule
+  //     .filter(m => m.status === "un-paid")
+  //     .reduce((sum, m) => sum + m.amount, 0);
+
+  //   // Create rental document
+  //   const rental = new Rental({
+  //     user,
+  //     status: "pending",
+  //     annualRentAmount: annualAmountNum,
+  //     alreadyPaidAmount: alreadyPaidNum,
+  //     monthlyInstallment,
+  //     interest,
+  //     dueAmount,
+  //     amountPaid: alreadyPaidNum,
+  //     attachment,
+  //     city,
+  //     neighborhood,
+  //     propertyOwners,
+  //     monthlySchedule,
+  //   });
+
+  //   // Save rental
+  //   await rental.save();
+
+  //   // Send response
+  //   sendResponse(res, 201, true, "Rental created successfully", rental);
+  // }),
+
   createRental: asyncHandler(async (req, res, next) => {
     const user = req.user.id;
     const {
@@ -26,12 +155,27 @@ const rentalController = {
       return sendResponse(res, 400, false, "Required fields are missing");
     }
 
-    // Check if there is any existing rental that is NOT closed
+    // Check if property owner phone already exists in Rental
+    const existingOwnerInRental = await Rental.findOne({
+      "propertyOwners.phone": propertyOwners.phone
+    });
+    if (existingOwnerInRental) {
+      return sendResponse(res, 400, false, "A rental already exists with this property owner's phone");
+    }
+
+    // Check if property owner phone matches any User's phone
+    const existingUserWithPhone = await User.findOne({
+      phone: propertyOwners.phone
+    });
+    if (existingUserWithPhone) {
+      return sendResponse(res, 400, false, "This property owner's phone is already registered to a user");
+    }
+
+    // Check if there is any existing rental that is NOT closed for this user
     const existingRental = await Rental.findOne({
       user,
       status: { $ne: "closed" }
     });
-
     if (existingRental) {
       return sendResponse(
         res,
@@ -76,7 +220,7 @@ const rentalController = {
     // Build monthly payment schedule with full date
     const monthlySchedule = [];
     let currentDate = new Date();
-    const startDay = currentDate.getDate(); // Keep same day across months
+    const startDay = currentDate.getDate();
     let amountRemaining = totalDueWithInterest;
 
     for (let i = 0; i < 12; i++) {
@@ -86,15 +230,13 @@ const rentalController = {
       const year = currentDate.getFullYear();
 
       let status = "un-paid";
-
-      // If already paid covers at least the first month, mark it paid
       if (i === 0 && alreadyPaidNum > 0) {
         status = "paid";
         amountRemaining -= monthlyInstallment;
       }
 
       monthlySchedule.push({
-        month: `${day} ${monthName} ${year}`, // Example: "11 August 2025"
+        month: `${day} ${monthName} ${year}`,
         amount: monthlyInstallment,
         status,
       });
@@ -102,12 +244,12 @@ const rentalController = {
       currentDate.setMonth(currentDate.getMonth() + 1);
     }
 
-    // Calculate total due amount after marking first month as paid
+    // Calculate total due
     const dueAmount = monthlySchedule
       .filter(m => m.status === "un-paid")
       .reduce((sum, m) => sum + m.amount, 0);
 
-    // Create rental document
+    // Create rental
     const rental = new Rental({
       user,
       status: "pending",
@@ -124,10 +266,7 @@ const rentalController = {
       monthlySchedule,
     });
 
-    // Save rental
     await rental.save();
-
-    // Send response
     sendResponse(res, 201, true, "Rental created successfully", rental);
   }),
 

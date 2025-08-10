@@ -11,9 +11,9 @@ router.use(verifyToken);
 
 router.route("/add-rental-application").post(rentalController.createRental);
 router.route("/get-rental-applications").get(rentalController.getRental);
-// router.route("/get-rental-applications").get(rentalController.getRental);
-// router.route("/get-rental-applications").get(rentalController.getRental);
-// router.route("/get-rental-applications").get(rentalController.getRental);
-
+router.route("/get-rental-applications-by-filter").get(rentalController.getByFilterUserRental);
+router.route("/get-rental-applications-by-id").get(rentalController.getRentalById);
+router.route("/pay-installment").patch(rentalController.updateMonthlyBreakdown);
+router.route("/get-owner-contacts").get(rentalController.getUserRentalApplicationsWithOwner);
 
 export default router;

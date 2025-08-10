@@ -14,6 +14,7 @@ const rentalController = {
       propertyOwners,
     } = req.body;
 
+    // Validate required fields
     if (
       !user ||
       annualRentAmount === undefined ||
@@ -25,19 +26,26 @@ const rentalController = {
       return sendResponse(res, 400, false, "Required fields are missing");
     }
 
-    // Check for existing active rental (only status: 'active')
+    // Check if there is any existing rental that is NOT closed
     const existingRental = await Rental.findOne({
       user,
-      status: 'active'
+      status: { $ne: "closed" }
     });
 
     if (existingRental) {
-      return sendResponse(res, 400, false, "User already has an active rental");
+      return sendResponse(
+        res,
+        400,
+        false,
+        "You can only create a new rental when all previous applications are closed"
+      );
     }
 
+    // Convert inputs to numbers
     const annualAmountNum = Number(annualRentAmount);
     const alreadyPaidNum = Number(alreadyPaidAmount);
 
+    // Validate numbers
     if (isNaN(annualAmountNum) || annualAmountNum <= 0) {
       return sendResponse(res, 400, false, "Invalid annualRentAmount");
     }
@@ -45,32 +53,61 @@ const rentalController = {
       return sendResponse(res, 400, false, "Invalid alreadyPaidAmount");
     }
 
+    // Calculate remaining principal after already paid amount
     const remainingPrincipal = annualAmountNum - alreadyPaidNum;
     if (remainingPrincipal < 0) {
-      return sendResponse(res, 400, false, "Already paid amount cannot exceed annual rent");
+      return sendResponse(
+        res,
+        400,
+        false,
+        "Already paid amount cannot exceed annual rent"
+      );
     }
 
+    // Calculate interest (20%) on remaining amount
     const interest = Number((remainingPrincipal * 0.2).toFixed(2));
-    const totalDueWithInterest = Number((remainingPrincipal + interest).toFixed(2));
-    const monthlyInstallment = Number((totalDueWithInterest / 12).toFixed(2));
+    const totalDueWithInterest = Number(
+      (remainingPrincipal + interest).toFixed(2)
+    );
+    const monthlyInstallment = Number(
+      (totalDueWithInterest / 12).toFixed(2)
+    );
 
+    // Build monthly payment schedule with full date
     const monthlySchedule = [];
     let currentDate = new Date();
+    const startDay = currentDate.getDate(); // Keep same day across months
+    let amountRemaining = totalDueWithInterest;
+
     for (let i = 0; i < 12; i++) {
-      const monthName = currentDate.toLocaleString("default", { month: "short" });
+      currentDate.setDate(startDay);
+      const day = String(currentDate.getDate()).padStart(2, "0");
+      const monthName = currentDate.toLocaleString("default", { month: "long" });
       const year = currentDate.getFullYear();
+
+      let status = "un-paid";
+
+      // If already paid covers at least the first month, mark it paid
+      if (i === 0 && alreadyPaidNum > 0) {
+        status = "paid";
+        amountRemaining -= monthlyInstallment;
+      }
+
       monthlySchedule.push({
-        month: `${monthName} ${year}`,
+        month: `${day} ${monthName} ${year}`, // Example: "11 August 2025"
         amount: monthlyInstallment,
-        status: "un-paid",
+        status,
       });
+
       currentDate.setMonth(currentDate.getMonth() + 1);
     }
 
+    // Calculate total due amount after marking first month as paid
     const dueAmount = monthlySchedule
       .filter(m => m.status === "un-paid")
       .reduce((sum, m) => sum + m.amount, 0);
 
+    // Create rental document
     const rental = new Rental({
       user,
       status: "pending",
@@ -79,7 +116,7 @@ const rentalController = {
       monthlyInstallment,
       interest,
       dueAmount,
-      amountPaid: 0,
+      amountPaid: alreadyPaidNum,
       attachment,
       city,
       neighborhood,
@@ -87,8 +124,10 @@ const rentalController = {
       monthlySchedule,
     });
 
+    // Save rental
     await rental.save();
 
+    // Send response
     sendResponse(res, 201, true, "Rental created successfully", rental);
   }),
 
@@ -110,84 +149,136 @@ const rentalController = {
     sendResponse(res, 200, true, "Rentals retrieved successfully", rentals);
   }),
 
-  updateRental: asyncHandler(async (req, res, next) => {
-    const rentalId = req.params.id;
-    const {
-      annualRentAmount,
-      alreadyPaidAmount,
-      attachment,
-      city,
-      neighborhood,
-      propertyOwners,
-      status
-    } = req.body;
+  getByFilterUserRental: asyncHandler(async (req, res, next) => {
+    const user = req.user.id;
+    const { status, monthYear } = req.query;
 
-    if (!rentalId) {
-      return sendResponse(res, 400, false, "Rental ID is required");
+    if (!user) {
+      return sendResponse(res, 400, false, "User ID is required");
     }
 
+    if (!status && !monthYear) {
+      return sendResponse(res, 400, false, "At least one filter (status or monthYear) is required");
+    }
+
+    // Fetch all rentals for this user
+    const rentals = await Rental.find({ user }).lean();
+
+    if (!rentals || rentals.length === 0) {
+      return sendResponse(res, 404, false, "No rentals found for this user");
+    }
+
+    // Filter rentals based on monthlySchedule
+    const filteredRentals = rentals
+      .map(rental => {
+        const filteredSchedule = rental.monthlySchedule.filter(schedule => {
+          let matches = true;
+
+          if (status) {
+            matches = matches && schedule.status.toLowerCase() === status.toLowerCase();
+          }
+
+          if (monthYear) {
+            // monthYear can be like "August 2025" or "11 August 2025"
+            matches = matches && schedule.month.toLowerCase().includes(monthYear.toLowerCase());
+          }
+
+          return matches;
+        });
+
+        // Only return rental if it has matching schedule
+        if (filteredSchedule.length > 0) {
+          return {
+            ...rental,
+            monthlySchedule: filteredSchedule // return only matched months
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    if (filteredRentals.length === 0) {
+      return sendResponse(res, 404, false, "No rentals match the provided filters");
+    }
+
+    sendResponse(res, 200, true, "Filtered rentals retrieved successfully", filteredRentals);
+  }),
+
+  getRentalById: asyncHandler(async (req, res, next) => {
+    const { id } = req.query;
+
+    if (!id) {
+      return sendResponse(res, 400, false, "Rental application ID is required");
+    }
+
+    const rental = await Rental.findById(id)
+
+    if (!rental) {
+      return sendResponse(res, 404, false, "Rental application not found");
+    }
+
+    sendResponse(res, 200, true, "Rental application details retrieved", rental);
+  }),
+
+  updateMonthlyBreakdown: asyncHandler(async (req, res, next) => {
+    const { rentalId, monthYear } = req.query;
+
+    if (!rentalId || !monthYear) {
+      return sendResponse(res, 400, false, "Rental ID and monthYear are required");
+    }
+
+    // Find rental
     const rental = await Rental.findById(rentalId);
     if (!rental) {
-      return sendResponse(res, 404, false, "Rental not found");
+      return sendResponse(res, 404, false, "Rental application not found");
     }
 
-    // Update basic fields
-    if (annualRentAmount !== undefined) rental.annualRentAmount = Number(annualRentAmount);
-    if (alreadyPaidAmount !== undefined) rental.alreadyPaidAmount = Number(alreadyPaidAmount);
-    if (attachment) rental.attachment = attachment;
-    if (city) rental.city = city;
-    if (neighborhood) rental.neighborhood = neighborhood;
-    if (propertyOwners) rental.propertyOwners = propertyOwners;
-    if (status) rental.status = status;
+    let foundMonth = false;
 
-    // Recalculate if rent or paid amount changes
-    if (annualRentAmount !== undefined || alreadyPaidAmount !== undefined) {
-      const remainingPrincipal = rental.annualRentAmount - rental.alreadyPaidAmount;
-      if (remainingPrincipal < 0) {
-        return sendResponse(res, 400, false, "Already paid amount cannot exceed annual rent");
+    // Update the monthly schedule
+    rental.monthlySchedule = rental.monthlySchedule.map(schedule => {
+      if (
+        schedule.month.toLowerCase() === monthYear.toLowerCase() ||
+        schedule.month.toLowerCase().includes(monthYear.toLowerCase())
+      ) {
+        if (schedule.status === "paid") {
+          return schedule; // Already paid, skip
+        }
+        schedule.status = "paid";
+        rental.amountPaid = Number((rental.amountPaid + schedule.amount).toFixed(2));
+        rental.dueAmount = Number((rental.dueAmount - schedule.amount).toFixed(2));
+        foundMonth = true;
       }
+      return schedule;
+    });
 
-      rental.interest = Number((remainingPrincipal * 0.2).toFixed(2));
-      const totalDueWithInterest = Number((remainingPrincipal + rental.interest).toFixed(2));
-      rental.monthlyInstallment = Number((totalDueWithInterest / 12).toFixed(2));
-
-      // Update monthly schedule
-      rental.monthlySchedule = [];
-      let currentDate = new Date();
-      for (let i = 0; i < 12; i++) {
-        const monthName = currentDate.toLocaleString("default", { month: "short" });
-        const year = currentDate.getFullYear();
-        rental.monthlySchedule.push({
-          month: `${monthName} ${year}`,
-          amount: rental.monthlyInstallment,
-          status: "un-paid",
-        });
-        currentDate.setMonth(currentDate.getMonth() + 1);
-      }
-
-      rental.dueAmount = rental.monthlySchedule
-        .filter(m => m.status === "un-paid")
-        .reduce((sum, m) => sum + m.amount, 0);
+    if (!foundMonth) {
+      return sendResponse(res, 404, false, "No matching month/year found in schedule");
     }
 
     await rental.save();
-    sendResponse(res, 200, true, "Rental updated successfully", rental);
+
+    sendResponse(res, 200, true, "Monthly breakdown updated successfully", rental);
   }),
 
-  deleteRental: asyncHandler(async (req, res, next) => {
-    const rentalId = req.params.id;
-
-    if (!rentalId) {
-      return sendResponse(res, 400, false, "Rental ID is required");
+  getUserRentalApplicationsWithOwner: asyncHandler(async (req, res, next) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return sendResponse(res, 401, false, "User not authenticated");
     }
 
-    const rental = await Rental.findByIdAndDelete(rentalId);
-    if (!rental) {
-      return sendResponse(res, 404, false, "Rental not found");
+    // Fetch only propertyOwners and status fields
+    const applications = await Rental.find({ user: userId })
+      .select("propertyOwners status")
+      .lean();
+
+    if (!applications.length) {
+      return sendResponse(res, 404, false, "No rental applications found");
     }
 
-    sendResponse(res, 200, true, "Rental deleted successfully");
-  }),
+    return sendResponse(res, 200, true, "Rental application owners fetched successfully", applications);
+  })
+
 };
 
 export default rentalController;

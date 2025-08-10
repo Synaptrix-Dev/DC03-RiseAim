@@ -1,5 +1,6 @@
 import User from "../../models/user.model.js";
 import jwt from "jsonwebtoken";
+import Rental from '../../models/rental.model.js'
 import asyncHandler from "../../services/asyncHandler.service.js";
 import sendResponse from "../../services/sendResponse.service.js";
 
@@ -238,12 +239,25 @@ const authController = {
       return sendResponse(res, 400, false, "User ID is required");
     }
 
+    // Fetch user without password
     const user = await User.findById(userId).select("-password").lean();
     if (!user) {
       return sendResponse(res, 404, false, "User not found");
     }
 
-    sendResponse(res, 200, true, "User details retrieved", user);
+    // Fetch rental application with status active OR verified
+    const rentalApplication = await Rental.findOne({
+      user: userId,
+      status: { $in: ["active", "verified"] }
+    }).lean();
+
+    // Merge data
+    const userDetails = {
+      ...user,
+      rentalApplication: rentalApplication || null
+    };
+
+    sendResponse(res, 200, true, "User details retrieved", userDetails);
   }),
 
   updateUser: asyncHandler(async (req, res, next) => {

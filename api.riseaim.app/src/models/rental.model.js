@@ -9,7 +9,7 @@ const monthlyPaymentSchema = new mongoose.Schema({
 const rentalSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    status: { type: String, default: "pending", enum: ["pending", "verified", "in-active"] },
+    status: { type: String, default: "pending", enum: ["pending", "verified", "in-active", "closed"] },
     annualRentAmount: { type: Number, required: true },
     alreadyPaidAmount: { type: Number, required: true },
     monthlyInstallment: { type: Number, default: 0 },

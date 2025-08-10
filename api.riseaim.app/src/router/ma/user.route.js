@@ -13,7 +13,7 @@ router.use(verifyToken);
 
 // * CREATING ROUTES - ADMIN AUTHENTICATION 😎
 router.route("/check-user").post(userController.checkUser);
-router.route("/register").post(userController.register);
+router.route("/register").post(userController.register); 
 router.route("/verify-otp").post(userController.verifyOTP);
 router.route("/login").post(userController.login);
 router.route("/reset-password").post(userController.resetPassword);

@@ -282,7 +282,7 @@ const rentalController = {
       .lean();
 
     if (!rentals || rentals.length === 0) {
-      return sendResponse(res, 404, false, "No rentals found for this user");
+      return sendResponse(res, 200, true, "No rentals found for this user", []);
     }
 
     sendResponse(res, 200, true, "Rentals retrieved successfully", rentals);
@@ -300,14 +300,12 @@ const rentalController = {
       return sendResponse(res, 400, false, "At least one filter (status or monthYear) is required");
     }
 
-    // Fetch all rentals for this user
     const rentals = await Rental.find({ user }).lean();
 
     if (!rentals || rentals.length === 0) {
-      return sendResponse(res, 404, false, "No rentals found for this user");
+      return sendResponse(res, 200, true, "No rentals found for this user", []);
     }
 
-    // Filter rentals based on monthlySchedule
     const filteredRentals = rentals
       .map(rental => {
         const filteredSchedule = rental.monthlySchedule.filter(schedule => {
@@ -318,18 +316,16 @@ const rentalController = {
           }
 
           if (monthYear) {
-            // monthYear can be like "August 2025" or "11 August 2025"
             matches = matches && schedule.month.toLowerCase().includes(monthYear.toLowerCase());
           }
 
           return matches;
         });
 
-        // Only return rental if it has matching schedule
         if (filteredSchedule.length > 0) {
           return {
             ...rental,
-            monthlySchedule: filteredSchedule // return only matched months
+            monthlySchedule: filteredSchedule
           };
         }
         return null;
@@ -337,11 +333,12 @@ const rentalController = {
       .filter(Boolean);
 
     if (filteredRentals.length === 0) {
-      return sendResponse(res, 404, false, "No rentals match the provided filters");
+      return sendResponse(res, 200, true, "No rentals match the provided filters", []);
     }
 
     sendResponse(res, 200, true, "Filtered rentals retrieved successfully", filteredRentals);
   }),
+
 
   getRentalById: asyncHandler(async (req, res, next) => {
     const { id } = req.query;

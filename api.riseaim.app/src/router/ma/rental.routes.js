@@ -11,6 +11,7 @@ router.use(verifyToken);
 
 router.route("/add-rental-application").post(rentalController.createRental);
 router.route("/get-rental-applications").get(rentalController.getRental);
+router.route("/get-current-application").get(rentalController.getCurrentRental);
 router.route("/get-rental-applications-by-filter").get(rentalController.getByFilterUserRental);
 router.route("/get-rental-applications-by-id").get(rentalController.getRentalById);
 router.route("/pay-installment").patch(rentalController.updateMonthlyBreakdown);

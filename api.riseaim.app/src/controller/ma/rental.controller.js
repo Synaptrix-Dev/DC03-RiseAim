@@ -288,6 +288,27 @@ const rentalController = {
     sendResponse(res, 200, true, "Rentals retrieved successfully", rentals);
   }),
 
+  getCurrentRental: asyncHandler(async (req, res, next) => {
+    const user = req.user.id;
+
+    if (!user) {
+      return sendResponse(res, 400, false, "User ID is required");
+    }
+
+    const rentals = await Rental.find({
+      user,
+      status: { $in: ["approved", "active"] }
+    })
+      .populate("user", "-password")
+      .lean();
+
+    if (!rentals || rentals.length === 0) {
+      return sendResponse(res, 200, true, "No rentals found for this user", []);
+    }
+
+    sendResponse(res, 200, true, "Rentals retrieved successfully", rentals);
+  }),
+
   getByFilterUserRental: asyncHandler(async (req, res, next) => {
     const user = req.user.id;
     const { status, monthYear } = req.query;
@@ -338,7 +359,6 @@ const rentalController = {
 
     sendResponse(res, 200, true, "Filtered rentals retrieved successfully", filteredRentals);
   }),
-
 
   getRentalById: asyncHandler(async (req, res, next) => {
     const { id } = req.query;

@@ -16,5 +16,6 @@ router.route("/get-rental-applications-by-filter").get(rentalController.getByFil
 router.route("/get-rental-applications-by-id").get(rentalController.getRentalById);
 router.route("/pay-installment").patch(rentalController.updateMonthlyBreakdown);
 router.route("/get-owner-contacts").get(rentalController.getUserRentalApplicationsWithOwner);
+router.route("/get-current-application").get(rentalController.getCurrentRental);
 
 export default router;

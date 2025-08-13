@@ -3,13 +3,22 @@ import User from '../../models/user.model.js';
 import asyncHandler from "../../services/asyncHandler.service.js";
 import sendResponse from "../../services/sendResponse.service.js";
 
-// Helper function to format Date to a readable timestamp string
 const formatTimestamp = (date) => {
-  return date.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+  if (!(date instanceof Date)) {
+    date = new Date(date);
+  }
+  if (isNaN(date)) return null; // invalid date guard
+  // Return in the same local format as stored
+  return date.getFullYear() + "-" +
+    String(date.getMonth() + 1).padStart(2, "0") + "-" +
+    String(date.getDate()).padStart(2, "0") + " " +
+    String(date.getHours()).padStart(2, "0") + ":" +
+    String(date.getMinutes()).padStart(2, "0") + ":" +
+    String(date.getSeconds()).padStart(2, "0");
 };
 
 const rentalController = {
-  createRental: asyncHandler(async (req, res, next) => {
+  createRental: asyncHandler(async (req, res) => {
     const user = req.user.id;
     const {
       annualRentAmount,
@@ -20,7 +29,6 @@ const rentalController = {
       propertyOwners,
     } = req.body;
 
-    // Validate required fields
     if (
       !user ||
       annualRentAmount === undefined ||
@@ -33,7 +41,6 @@ const rentalController = {
     }
 
     try {
-      // Check if property owner phone already exists in Rental
       const existingOwnerInRental = await Rental.findOne({
         "propertyOwners.phone": propertyOwners.phone
       });
@@ -41,7 +48,6 @@ const rentalController = {
         return sendResponse(res, 400, false, "A rental already exists with this property owner's phone");
       }
 
-      // Check if property owner phone matches any User's phone
       const existingUserWithPhone = await User.findOne({
         phone: propertyOwners.phone
       });
@@ -49,25 +55,17 @@ const rentalController = {
         return sendResponse(res, 400, false, "This property owner's phone is already registered to a user");
       }
 
-      // Check for existing active rental (based on your preference for 'active' status)
       const existingRental = await Rental.findOne({
         user,
         status: "active"
       });
       if (existingRental) {
-        return sendResponse(
-          res,
-          400,
-          false,
-          "You can only create a new rental when no active rentals exist"
-        );
+        return sendResponse(res, 400, false, "You can only create a new rental when no active rentals exist");
       }
 
-      // Convert inputs to numbers
       const annualAmountNum = Number(annualRentAmount);
       const alreadyPaidNum = Number(alreadyPaidAmount);
 
-      // Validate numbers
       if (isNaN(annualAmountNum) || annualAmountNum <= 0) {
         return sendResponse(res, 400, false, "Invalid annualRentAmount");
       }
@@ -75,31 +73,30 @@ const rentalController = {
         return sendResponse(res, 400, false, "Invalid alreadyPaidAmount");
       }
 
-      // Calculate remaining principal
       const remainingPrincipal = annualAmountNum - alreadyPaidNum;
       if (remainingPrincipal < 0) {
-        return sendResponse(
-          res,
-          400,
-          false,
-          "Already paid amount cannot exceed annual rent"
-        );
+        return sendResponse(res, 400, false, "Already paid amount cannot exceed annual rent");
       }
 
-      // Calculate interest (20%) and totals
       const interest = Number((remainingPrincipal * 0.2).toFixed(2));
       const totalDueWithInterest = Number((remainingPrincipal + interest).toFixed(2));
       const monthlyInstallment = Number((totalDueWithInterest / 12).toFixed(2));
 
-      // Build monthly payment schedule with Date objects
+      // Use exact creation timestamp
+      const baseDate = new Date();
+      const startDay = baseDate.getDate();
+      const startHours = baseDate.getHours();
+      const startMinutes = baseDate.getMinutes();
+      const startSeconds = baseDate.getSeconds();
+
       const monthlySchedule = [];
-      let currentDate = new Date();
-      const startDay = currentDate.getDate();
       let amountRemaining = totalDueWithInterest;
 
       for (let i = 0; i < 12; i++) {
-        currentDate.setDate(startDay);
-        const timestamp = new Date(currentDate); // Store as Date object
+        const scheduleDate = new Date(baseDate);
+        scheduleDate.setMonth(baseDate.getMonth() + i);
+        scheduleDate.setDate(startDay);
+        scheduleDate.setHours(startHours, startMinutes, startSeconds, 0);
 
         let status = "un-paid";
         if (i === 0 && alreadyPaidNum > 0) {
@@ -108,20 +105,16 @@ const rentalController = {
         }
 
         monthlySchedule.push({
-          month: timestamp, // Store as Date object
+          month: scheduleDate, // exact same time as createdAt, only month changes
           amount: monthlyInstallment,
           status,
         });
-
-        currentDate.setMonth(currentDate.getMonth() + 1);
       }
 
-      // Calculate total due
       const dueAmount = monthlySchedule
         .filter(m => m.status === "un-paid")
         .reduce((sum, m) => sum + m.amount, 0);
 
-      // Create rental
       const rental = new Rental({
         user,
         status: "pending",
@@ -139,114 +132,148 @@ const rentalController = {
       });
 
       await rental.save();
-      // Format timestamps for response
+
       const formattedRental = {
         ...rental.toObject(),
+        monthlySchedule: rental.monthlySchedule.map(schedule => ({
+          ...schedule,
+          month: formatTimestamp(schedule.month), // same format as createdAt
+        })),
+        createdAt: formatTimestamp(rental.createdAt)
+      };
+
+      sendResponse(res, 201, true, "Rental created successfully", formattedRental);
+    } catch (error) {
+      sendResponse(res, 500, false, `Error creating rental: ${error.message}`);
+    }
+  }),
+
+  // GET RENTALS
+  getRental: asyncHandler(async (req, res) => {
+    const user = req.user.id;
+    if (!user) return sendResponse(res, 400, false, "User ID is required");
+
+    try {
+      const rentals = await Rental.find({ user }).populate("user", "-password").lean();
+      if (!rentals.length) {
+        return sendResponse(res, 200, true, "No rentals found for this user", []);
+      }
+
+      const formatted = rentals.map(rental => ({
+        ...rental,
+        monthlySchedule: rental.monthlySchedule.map(schedule => ({
+          ...schedule,
+          month: formatTimestamp(schedule.month),
+        })),
+      }));
+
+      sendResponse(res, 200, true, "Rentals retrieved successfully", formatted);
+    } catch (error) {
+      sendResponse(res, 500, false, `Error retrieving rentals: ${error.message}`);
+    }
+  }),
+
+  getCurrentRental: asyncHandler(async (req, res) => {
+    const user = req.user.id;
+    if (!user) return sendResponse(res, 400, false, "User ID is required");
+
+    try {
+      const rentals = await Rental.find({
+        user,
+        status: { $in: ["active", "verified"] } // Filter only active or verified
+      })
+        .populate("user", "-password")
+        .lean();
+
+      if (!rentals.length) {
+        return sendResponse(res, 200, true, "No active or verified rentals found", []);
+      }
+
+      const formatted = rentals.map(rental => ({
+        ...rental,
+        monthlySchedule: rental.monthlySchedule?.map(schedule => ({
+          ...schedule,
+          month: formatTimestamp(schedule.month),
+        })) || [],
+      }));
+
+      sendResponse(res, 200, true, "Active/Verified rentals retrieved successfully", formatted);
+    } catch (error) {
+      sendResponse(res, 500, false, `Error retrieving rentals: ${error.message}`);
+    }
+  }),
+
+
+  // GET CURRENT RENTAL
+  getCurrentRental: asyncHandler(async (req, res) => {
+    const user = req.user.id;
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required"
+      });
+    }
+
+    try {
+      const rental = await Rental.findOne({
+        user,
+        status: { $in: ["verified", "active"] }
+      })
+        .populate("user", "-password")
+        .lean();
+
+      if (!rental) {
+        return res.status(200).json({
+          success: true,
+          message: "No rentals found for this user",
+          currentActiveVerifiedApplication: null
+        });
+      }
+
+      const formatted = {
+        ...rental,
         monthlySchedule: rental.monthlySchedule.map(schedule => ({
           ...schedule,
           month: formatTimestamp(schedule.month),
         })),
       };
-      sendResponse(res, 201, true, "Rental created successfully", formattedRental);
+
+      res.status(200).json({
+        success: true,
+        message: "Current active/verified rental retrieved successfully",
+        currentActiveVerifiedApplication: formatted
+      });
     } catch (error) {
-      return sendResponse(res, 500, false, `Error creating rental: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: `Error retrieving current rental: ${error.message}`
+      });
     }
   }),
 
-  getRental: asyncHandler(async (req, res, next) => {
-    const user = req.user.id;
-
-    if (!user) {
-      return sendResponse(res, 400, false, "User ID is required");
-    }
-
-    try {
-      const rentals = await Rental.find({ user })
-        .populate("user", "-password")
-        .lean();
-
-      if (!rentals || rentals.length === 0) {
-        return sendResponse(res, 200, true, "No rentals found for this user", []);
-      }
-
-      // Format timestamps for response
-      const formattedRentals = rentals.map(rental => ({
-        ...rental,
-        monthlySchedule: rental.monthlySchedule.map(schedule => ({
-          ...schedule,
-          month: formatTimestamp(new Date(schedule.month)),
-        })),
-      }));
-
-      sendResponse(res, 200, true, "Rentals retrieved successfully", formattedRentals);
-    } catch (error) {
-      return sendResponse(res, 500, false, `Error retrieving rentals: ${error.message}`);
-    }
-  }),
-
-  getCurrentRental: asyncHandler(async (req, res, next) => {
-    const user = req.user.id;
-
-    if (!user) {
-      return sendResponse(res, 400, false, "User ID is required");
-    }
-
-    try {
-      const rentals = await Rental.find({
-        user,
-        status: { $in: ["approved", "active"] }
-      })
-        .populate("user", "-password")
-        .lean();
-
-      if (!rentals || rentals.length === 0) {
-        return sendResponse(res, 200, true, "No rentals found for this user", []);
-      }
-
-      // Format timestamps for response
-      const formattedRentals = rentals.map(rental => ({
-        ...rental,
-        monthlySchedule: rental.monthlySchedule.map(schedule => ({
-          ...schedule,
-          month: formatTimestamp(new Date(schedule.month)),
-        })),
-      }));
-
-      sendResponse(res, 200, true, "Rentals retrieved successfully", formattedRentals);
-    } catch (error) {
-      return sendResponse(res, 500, false, `Error retrieving current rentals: ${error.message}`);
-    }
-  }),
-
-  getByFilterUserRental: asyncHandler(async (req, res, next) => {
+  // FILTER RENTALS
+  getByFilterUserRental: asyncHandler(async (req, res) => {
     const user = req.user.id;
     const { status, monthYear } = req.query;
 
-    if (!user) {
-      return sendResponse(res, 400, false, "User ID is required");
-    }
-
+    if (!user) return sendResponse(res, 400, false, "User ID is required");
     if (!status && !monthYear) {
       return sendResponse(res, 400, false, "At least one filter (status or monthYear) is required");
     }
 
     try {
       const rentals = await Rental.find({ user }).lean();
-
-      if (!rentals || rentals.length === 0) {
+      if (!rentals.length) {
         return sendResponse(res, 200, true, "No rentals found for this user", []);
       }
 
-      const filteredRentals = rentals
+      const filtered = rentals
         .map(rental => {
-          const filteredSchedule = rental.monthlySchedule.filter(schedule => {
+          const scheduleFiltered = rental.monthlySchedule.filter(schedule => {
             let matches = true;
             const scheduleDate = new Date(schedule.month);
 
-            if (status) {
-              matches = matches && schedule.status.toLowerCase() === status.toLowerCase();
-            }
-
+            if (status) matches = matches && schedule.status.toLowerCase() === status.toLowerCase();
             if (monthYear) {
               const [month, year] = monthYear.split(' ');
               const scheduleMonth = scheduleDate.toLocaleString('default', { month: 'long' });
@@ -255,16 +282,15 @@ const rentalController = {
                 scheduleMonth.toLowerCase() === month.toLowerCase() &&
                 scheduleYear === year;
             }
-
             return matches;
           });
 
-          if (filteredSchedule.length > 0) {
+          if (scheduleFiltered.length) {
             return {
               ...rental,
-              monthlySchedule: filteredSchedule.map(schedule => ({
-                ...schedule,
-                month: formatTimestamp(new Date(schedule.month)),
+              monthlySchedule: scheduleFiltered.map(s => ({
+                ...s,
+                month: formatTimestamp(s.month),
               })),
             };
           }
@@ -272,57 +298,49 @@ const rentalController = {
         })
         .filter(Boolean);
 
-      if (filteredRentals.length === 0) {
+      if (!filtered.length) {
         return sendResponse(res, 200, true, "No rentals match the provided filters", []);
       }
 
-      sendResponse(res, 200, true, "Filtered rentals retrieved successfully", filteredRentals);
+      sendResponse(res, 200, true, "Filtered rentals retrieved successfully", filtered);
     } catch (error) {
-      return sendResponse(res, 500, false, `Error filtering rentals: ${error.message}`);
+      sendResponse(res, 500, false, `Error filtering rentals: ${error.message}`);
     }
   }),
 
-  getRentalById: asyncHandler(async (req, res, next) => {
+  // GET RENTAL BY ID
+  getRentalById: asyncHandler(async (req, res) => {
     const { id } = req.query;
-
-    if (!id) {
-      return sendResponse(res, 400, false, "Rental application ID is required");
-    }
+    if (!id) return sendResponse(res, 400, false, "Rental application ID is required");
 
     try {
       const rental = await Rental.findById(id).lean();
+      if (!rental) return sendResponse(res, 404, false, "Rental application not found");
 
-      if (!rental) {
-        return sendResponse(res, 404, false, "Rental application not found");
-      }
-
-      // Format timestamps for response
-      const formattedRental = {
+      const formatted = {
         ...rental,
         monthlySchedule: rental.monthlySchedule.map(schedule => ({
           ...schedule,
-          month: formatTimestamp(new Date(schedule.month)),
+          month: formatTimestamp(schedule.month),
         })),
       };
 
-      sendResponse(res, 200, true, "Rental application details retrieved", formattedRental);
+      sendResponse(res, 200, true, "Rental application details retrieved", formatted);
     } catch (error) {
-      return sendResponse(res, 500, false, `Error retrieving rental: ${error.message}`);
+      sendResponse(res, 500, false, `Error retrieving rental: ${error.message}`);
     }
   }),
 
-  updateMonthlyBreakdown: asyncHandler(async (req, res, next) => {
+  // UPDATE MONTHLY BREAKDOWN
+  updateMonthlyBreakdown: asyncHandler(async (req, res) => {
     const { rentalId, monthYear } = req.query;
-
     if (!rentalId || !monthYear) {
       return sendResponse(res, 400, false, "Rental ID and monthYear are required");
     }
 
     try {
       const rental = await Rental.findById(rentalId);
-      if (!rental) {
-        return sendResponse(res, 404, false, "Rental application not found");
-      }
+      if (!rental) return sendResponse(res, 404, false, "Rental application not found");
 
       let foundMonth = false;
 
@@ -336,9 +354,7 @@ const rentalController = {
           scheduleMonth.toLowerCase() === month.toLowerCase() &&
           scheduleYear === year
         ) {
-          if (schedule.status === "paid") {
-            return schedule; // Already paid, skip
-          }
+          if (schedule.status === "paid") return schedule;
           schedule.status = "paid";
           rental.amountPaid = Number((rental.amountPaid + schedule.amount).toFixed(2));
           rental.dueAmount = Number((rental.dueAmount - schedule.amount).toFixed(2));
@@ -353,48 +369,45 @@ const rentalController = {
 
       await rental.save();
 
-      // Format timestamps for response
-      const formattedRental = {
+      const formatted = {
         ...rental.toObject(),
         monthlySchedule: rental.monthlySchedule.map(schedule => ({
           ...schedule,
-          month: formatTimestamp(new Date(schedule.month)),
+          month: formatTimestamp(schedule.month),
         })),
       };
 
-      sendResponse(res, 200, true, "Monthly breakdown updated successfully", formattedRental);
+      sendResponse(res, 200, true, "Monthly breakdown updated successfully", formatted);
     } catch (error) {
-      return sendResponse(res, 500, false, `Error updating monthly breakdown: ${error.message}`);
+      sendResponse(res, 500, false, `Error updating monthly breakdown: ${error.message}`);
     }
   }),
 
-  getUserRentalApplicationsWithOwner: asyncHandler(async (req, res, next) => {
+  // GET RENTAL OWNERS
+  getUserRentalApplicationsWithOwner: asyncHandler(async (req, res) => {
     const userId = req.user?.id;
-    if (!userId) {
-      return sendResponse(res, 401, false, "User not authenticated");
-    }
+    if (!userId) return sendResponse(res, 401, false, "User not authenticated");
 
     try {
       const applications = await Rental.find({ user: userId })
-        .select("propertyOwners status")
+        .select("propertyOwners status monthlySchedule")
         .lean();
 
       if (!applications.length) {
         return sendResponse(res, 404, false, "No rental applications found");
       }
 
-      // Format timestamps for response
-      const formattedApplications = applications.map(app => ({
+      const formatted = applications.map(app => ({
         ...app,
         monthlySchedule: app.monthlySchedule?.map(schedule => ({
           ...schedule,
-          month: formatTimestamp(new Date(schedule.month)),
+          month: formatTimestamp(schedule.month),
         })) || [],
       }));
 
-      return sendResponse(res, 200, true, "Rental application owners fetched successfully", formattedApplications);
+      sendResponse(res, 200, true, "Rental application owners fetched successfully", formatted);
     } catch (error) {
-      return sendResponse(res, 500, false, `Error retrieving applications: ${error.message}`);
+      sendResponse(res, 500, false, `Error retrieving applications: ${error.message}`);
     }
   }),
 };

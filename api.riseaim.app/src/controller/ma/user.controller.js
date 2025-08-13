@@ -201,6 +201,7 @@ const authController = {
     }
   }),
 
+  // ! TODO  - discarded
   resetOrForgotPassword: asyncHandler(async (req, res, next) => {
     const { phone, newPassword, isOTPVerified } = req.body;
 
@@ -248,7 +249,7 @@ const authController = {
     // Check if rental application exists with status active OR verified
     const rentalExists = await Rental.exists({
       user: userId,
-      status: { $in: ["active", "verified"] }
+      status: { $in: ["active", "verified", "pending"] }
     });
 
     // Merge data and return only boolean
@@ -323,6 +324,57 @@ const authController = {
 
     sendResponse(res, 200, true, "Account deactivated successfully");
   }),
+
+  logout: asyncHandler(async (req, res, next) => {
+    const userId = req.user.id;
+
+    if (!userId) {
+      return sendResponse(res, 400, false, "User ID is required");
+    }
+
+    // Option 1: Store a logout timestamp
+    await User.findByIdAndUpdate(userId, {
+      logoutAt: new Date()
+    });
+
+    // Option 2: Increment token version (if using version in token payload)
+    // await User.findByIdAndUpdate(userId, { $inc: { tokenVersion: 1 } });
+
+    return sendResponse(res, 200, true, "Logged out successfully", {
+      token: null
+    });
+  }),
+
+  changePassword: asyncHandler(async (req, res, next) => {
+    const userId = req.user.id;
+    const { oldPassword, newPassword } = req.body;
+
+    if (!userId) {
+      return sendResponse(res, 400, false, "User ID is required");
+    }
+
+    if (!oldPassword || !newPassword) {
+      return sendResponse(res, 400, false, "Old and new password are required");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return sendResponse(res, 404, false, "User not found");
+    }
+
+    // Compare old password
+    const isMatch = await user.comparePassword(oldPassword);
+    if (!isMatch) {
+      return sendResponse(res, 400, false, "Old password is incorrect");
+    }
+
+    // Set and save new password
+    user.password = newPassword;
+    await user.save();
+
+    return sendResponse(res, 200, true, "Password updated successfully");
+  }),
+
 };
 
 export default authController;
